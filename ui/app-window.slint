@@ -1,17 +1,708 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+import { Button, VerticalBox, HorizontalBox, ScrollView, StandardListView, LineEdit, TextEdit, GroupBox, CheckBox } from "std-widgets.slint";
+
+export struct Project {
+    name: string,
+    provider: string,
+    reference: string,
+    status: string,
+}
+
+export struct LogEntry {
+    user: string,
+    time: string,
+    action: string,
+}
+
+component ActionButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: false;
+    in property <bool> outline: false;
+    callback clicked <=> touch.clicked;
+    
+    min-width: 80px;
+    height: 32px;
+    background: root.primary ? #3498db : (root.outline ? transparent : #f8f9fa);
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: root.primary ? #2980b9 : #dcdde1;
+    
+    touch := TouchArea { mouse-cursor: pointer; }
+    
+    Text {
+        padding-left: 10px;
+        padding-right: 10px;
+        text: root.text;
+        color: root.primary ? white : #2f3640;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    states [
+        pressed when touch.pressed : {
+            background: root.primary ? #2980b9 : #d1d8e0;
+        }
+        hover when touch.has-hover : {
+            background: root.primary ? #5dade2 : #edf0f2;
+        }
+    ]
+}
+
+component CustomInput inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder: "";
+    in property <bool> password: false;
+    callback edited(string);
+    
+    height: 35px;
+    background: white;
+    border-width: 1px;
+    border-color: input.has-focus ? #3498db : #dcdde1;
+    border-radius: 4px;
+
+    input := TextInput {
+        x: 8px;
+        width: parent.width - 16px;
+        vertical-alignment: center;
+        color: #2f3640;
+        single-line: true;
+        input-type: root.password ? InputType.password : InputType.text;
+        edited => { root.edited(self.text); }
+    }
+
+    TouchArea {
+        clicked => { input.focus(); }
+    }
+
+    Text {
+        x: 8px;
+        text: root.placeholder;
+        color: #a4b0be;
+        vertical-alignment: center;
+        visible: input.text == "";
+    }
+}
 
 export component AppWindow inherits Window {
-    in-out property <int> counter: 42;
-    callback request-increase-value();
-    VerticalBox {
-        Text {
-            text: "Counter: \{root.counter}";
+    title: "Dockix GUI";
+    min-width: 1000px;
+    min-height: 700px;
+
+    // Data provided by Rust
+    in property <[Project]> projects;
+    in property <[LogEntry]> admin-logs;
+    
+    // Auth State
+    in-out property <bool> is-logged-in: false;
+    in-out property <string> current-view: "login";
+
+    // Callbacks to Rust
+    callback change-view(string);
+    callback refresh-projects();
+    callback open-docs(string);
+    callback search-projects(string);
+    callback login(string, string, string); // ip, username, password
+    callback login-as-guest();
+    callback logout();
+
+    if (!root.is-logged-in && root.current-view == "login") : Rectangle {
+        background: #f5f6fa;
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 400px;
+                    height: 500px;
+                    background: white;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #dcdde1;
+                    
+                    VerticalBox {
+                        padding: 40px;
+                        spacing: 25px;
+                        alignment: start;
+
+                    Text {
+                        text: "Welcome to Dockix";
+                        font-size: 24px;
+                        font-weight: 800;
+                        color: #2c3e50;
+                        horizontal-alignment: center;
+                    }
+
+                    VerticalBox {
+                        spacing: 8px;
+                        Text { text: "Backend Server IP:"; color: #7f8c8d; font-weight: 600; }
+                        ip-input := CustomInput { placeholder: "127.0.0.1"; }
+                    }
+
+                    VerticalBox {
+                        spacing: 8px;
+                        Text { text: "Username:"; color: #7f8c8d; font-weight: 600; }
+                        user-input := CustomInput { placeholder: "admin"; }
+                    }
+
+                    VerticalBox {
+                        spacing: 8px;
+                        Text { text: "Password:"; color: #7f8c8d; font-weight: 600; }
+                        pass-input := CustomInput { placeholder: "••••••••"; password: true; }
+                    }
+
+                    VerticalBox {
+                        spacing: 12px;
+                        ActionButton { 
+                            text: "Login"; 
+                            primary: true; 
+                            height: 40px;
+                            clicked => { root.login(ip-input.text, user-input.text, pass-input.text); }
+                        }
+                        
+                        ActionButton { 
+                            text: "Browse as Guest"; 
+                            outline: true;
+                            height: 40px;
+                            clicked => { root.login-as-guest(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+    if (root.is-logged-in || root.current-view != "login") : HorizontalBox {
+        padding: 0;
+        spacing: 0;
+
+        // Sidebar Navigation
+        Rectangle {
+            width: 200px;
+            background: #2c3e50;
+            
+            VerticalBox {
+                alignment: start;
+                spacing: 10px;
+                padding: 10px;
+                padding-bottom: 20px;
+
+                Text {
+                    text: "DOCKIX";
+                    color: white;
+                    font-size: 24px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                Rectangle { height: 20px; } 
+
+                Rectangle {
+                    height: 40px;
+                    background: root.current-view == "user-dashboard" ? #34495e : transparent;
+                    border-radius: 4px;
+                    TouchArea { clicked => { root.change-view("user-dashboard"); } }
+                    Text { text: "Dashboard"; color: white; x: 10px; vertical-alignment: center; }
+                }
+
+                Rectangle {
+                    height: 40px;
+                    background: root.current-view == "admin-dashboard" ? #34495e : transparent;
+                    border-radius: 4px;
+                    TouchArea { clicked => { root.change-view("admin-dashboard"); } }
+                    Text { text: "Admin Panel"; color: white; x: 10px; vertical-alignment: center; }
+                }
+                
+                Rectangle { } // Flexible spacer
+
+                VerticalBox {
+                    spacing: 10px;
+                    
+                    // Logout Button
+                    Rectangle {
+                        height: 40px;
+                        background: transparent;
+                        border-width: 1px;
+                        border-color: #e84118;
+                        border-radius: 4px;
+                        TouchArea { clicked => { root.logout(); } }
+                        Text { text: "Logout"; color: #e84118; horizontal-alignment: center; vertical-alignment: center; font-weight: 600; }
+                    }
+
+                    // Custom Styled Sidebar Button
+                    Rectangle {
+                        height: 40px;
+                        background: #27ae60;
+                        border-radius: 4px;
+                        touch-new := TouchArea { 
+                            mouse-cursor: pointer;
+                            clicked => { root.change-view("onboarding"); } 
+                        }
+                        Text { 
+                            text: "+ New Project"; 
+                            color: white; 
+                            font-weight: 700; 
+                            horizontal-alignment: center; 
+                            vertical-alignment: center; 
+                        }
+
+                        states [
+                            pressed when touch-new.pressed : { background: #1e8449; }
+                            hover when touch-new.has-hover : { background: #2ecc71; }
+                        ]
+                    }
+                }
+            }
         }
 
-        Button {
-            text: "Increase value";
-            clicked => {
-                root.request-increase-value();
+        // Main Content Area
+        Rectangle {
+            background: #f5f6fa;
+            
+            if (root.current-view == "user-dashboard") : VerticalBox {
+                padding: 20px;
+                spacing: 20px;
+
+                HorizontalBox {
+                    alignment: space-between;
+                    Text { text: "My Projects"; font-size: 28px; font-weight: 600; color: #2f3640; }
+                    
+                    CustomInput { 
+                        placeholder: "Search projects..."; 
+                        width: 250px;
+                        edited => { root.search-projects(self.text); }
+                    }
+
+                    ActionButton { text: "Refresh"; clicked => { root.refresh-projects(); } }
+                }
+
+                Rectangle {
+                    background: white;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #dcdde1;
+                    clip: true; 
+                    
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 0;
+                        
+                        HorizontalBox {
+                            height: 40px;
+                            Text { text: "Name"; font-weight: 700; width: 25%; color: #2f3640; }
+                            Text { text: "Provider"; font-weight: 700; width: 15%; color: #2f3640; }
+                            Text { text: "Ref"; font-weight: 700; width: 20%; color: #2f3640; }
+                            Text { text: "Status"; font-weight: 700; width: 15%; color: #2f3640; }
+                            Text { text: "Actions"; font-weight: 700; width: 25%; color: #2f3640; }
+                        }
+
+                        Rectangle { height: 1px; background: #dcdde1; }
+
+                        ScrollView {
+                            VerticalBox {
+                                padding: 0;
+                                spacing: 0;
+                                alignment: start;
+                                for project in root.projects : VerticalBox {
+                                    HorizontalBox {
+                                        height: 50px;
+                                        alignment: center;
+                                        Text { text: project.name; width: 25%; vertical-alignment: center; color: #2f3640; }
+                                        Text { text: project.provider; width: 15%; vertical-alignment: center; color: #2f3640; }
+                                        Text { text: project.reference; width: 20%; vertical-alignment: center; color: #2f3640; }
+                                        
+                                        Rectangle {
+                                            width: 15%;
+                                            HorizontalBox {
+                                                alignment: start;
+                                                Rectangle {
+                                                    width: 10px; height: 10px; border-radius: 5px;
+                                                    background: project.status == "full" ? #44bd32 : 
+                                                                project.status == "in-progress" ? #fbc531 :
+                                                                project.status == "error" ? #e84118 : #7f8c8d;
+                                                    y: (parent.height - self.height) / 2;
+                                                }
+                                                Text { text: project.status; vertical-alignment: center; color: #2f3640; }
+                                            }
+                                        }
+
+                                        HorizontalBox {
+                                            width: 25%;
+                                            spacing: 5px;
+                                            ActionButton { text: "Docs"; primary: true; clicked => { root.open-docs(project.name); } }
+                                            ActionButton { text: "Sync"; }
+                                            ActionButton { text: "Set"; clicked => { root.change-view("project-management"); } }
+                                        }
+                                    }
+                                    Rectangle { height: 1px; background: #f1f2f6; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (root.current-view == "onboarding") : VerticalBox {
+                padding: 40px;
+                spacing: 20px;
+                alignment: start;
+
+                Text { text: "Add New Project"; font-size: 28px; font-weight: 600; color: #2f3640; }
+
+                VerticalBox {
+                    padding: 0;
+                    spacing: 10px;
+                    Text { text: "Repository Information"; font-weight: 700; color: #7f8c8d; font-size: 16px; }
+                    Rectangle {
+                        background: white; border-radius: 8px; border-width: 1px; border-color: #dcdde1;
+                        VerticalBox {
+                            padding: 20px;
+                            spacing: 15px;
+                            Text { text: "Repository URL (GitHub, SSH, GitLab):"; color: #2f3640; }
+                            CustomInput { placeholder: "https://github.com/user/repo.git"; }
+                            
+                            Text { text: "Authentication (Optional):"; color: #2f3640; }
+                            CustomInput { placeholder: "SSH Key or Token"; password: true; }
+
+                            HorizontalBox {
+                                alignment: start;
+                                ActionButton { text: "Verify Connection"; primary: true; width: 160px; }
+                            }
+
+                            Text { text: "Branch / Tag / Commit:"; color: #2f3640; }
+                            CustomInput { text: "main"; }
+                        }
+                    }
+                }
+
+                HorizontalBox {
+                    alignment: end;
+                    spacing: 10px;
+                    ActionButton { text: "Cancel"; width: 100px; clicked => { root.change-view("user-dashboard"); } }
+                    ActionButton { 
+                        text: "Start Indexing"; 
+                        primary: true;
+                        width: 150px;
+                        clicked => { root.change-view("indexing"); }
+                    }
+                }
+            }
+
+            if (root.current-view == "indexing") : VerticalBox {
+                padding: 40px;
+                spacing: 30px;
+                alignment: center;
+
+                Text { text: "Indexing Engine Working..."; font-size: 24px; font-weight: 600; color: #2f3640; }
+                
+                VerticalBox {
+                    padding: 0;
+                    spacing: 10px;
+                    width: 100%;
+                    Text { text: "Discovery Phase"; font-weight: 700; color: #7f8c8d; font-size: 16px; }
+                    Rectangle {
+                        background: white; border-radius: 8px; border-width: 1px; border-color: #dcdde1;
+                        VerticalBox {
+                            padding: 15px;
+                            Text { text: "Found 452 files: 120 .rs, 200 .js, 132 .py"; color: #2f3640; }
+                        }
+                    }
+                }
+
+                VerticalBox {
+                    padding: 0;
+                    spacing: 10px;
+                    width: 100%;
+                    Text { text: "Parsing Phase (Tree-sitter)"; font-weight: 700; color: #7f8c8d; font-size: 16px; }
+                    Rectangle {
+                        background: white; border-radius: 8px; border-width: 1px; border-color: #dcdde1;
+                        VerticalBox {
+                            padding: 15px;
+                            spacing: 10px;
+                            Text { text: "Latest symbols found:"; color: #2f3640; }
+                            Rectangle {
+                                height: 150px;
+                                background: #f8f9fa;
+                                border-width: 1px;
+                                border-color: #dcdde1;
+                                ScrollView {
+                                    VerticalBox {
+                                        alignment: start;
+                                        for i in 10 : Text { text: "  [File] src/main.rs -> Function: main()"; color: #2f3640; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 10px;
+                    Rectangle {
+                        width: 20px; height: 20px; background: #e84118; border-radius: 10px;
+                        Text { text: "!"; color: white; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                    Text { text: "Parsing warning in lib.rs: line 45. Skipped function 'X'."; color: #e84118; }
+                }
+
+                ActionButton { 
+                    text: "Complete & View Documentation"; 
+                    primary: true;
+                    width: 300px;
+                    clicked => { root.change-view("documentation"); }
+                }
+            }
+
+            if (root.current-view == "documentation") : HorizontalBox {
+                padding: 0;
+                spacing: 0;
+
+                Rectangle {
+                    width: 250px;
+                    background: white;
+                    Rectangle { x: parent.width - 1px; width: 1px; background: #dcdde1; }
+                    
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 15px;
+                        alignment: start;
+
+                        Text { text: "File Tree"; font-weight: 700; color: #2f3640; }
+                        VerticalBox {
+                            padding: 5px;
+                            spacing: 5px;
+                            Text { text: "📁 src"; color: #2f3640; }
+                            Text { text: "  |_ 📄 main.rs"; color: #3498db; font-weight: 600; }
+                            Text { text: "  |_ 📄 lib.rs"; color: #2f3640; }
+                            Text { text: "📁 ui"; color: #2f3640; }
+                            Text { text: "  |_ 📄 app-window.slint"; color: #2f3640; }
+                        }
+                        
+                        Rectangle { height: 1px; background: #f1f2f6; }
+
+                        Text { text: "Symbol Tree"; font-weight: 700; color: #2f3640; }
+                        VerticalBox {
+                            padding: 5px;
+                            spacing: 5px;
+                            Text { text: "ƒ main()"; color: #2f3640; }
+                            Text { text: "S Project"; color: #2f3640; }
+                            Text { text: "S LogEntry"; color: #2f3640; }
+                        }
+                        Rectangle { height: 100%; } 
+                    }
+                }
+
+                Rectangle {
+                    background: white;
+                    VerticalBox {
+                        padding: 25px;
+                        alignment: start;
+                        spacing: 15px;
+                        
+                        HorizontalBox {
+                            alignment: start;
+                            spacing: 10px;
+                            Text { text: "main.rs"; font-size: 28px; font-weight: 800; color: #2f3640; }
+                            Rectangle {
+                                background: #e3f2fd;
+                                border-radius: 4px;
+                                height: 24px;
+                                width: 50px;
+                                y: (parent.height - self.height) / 2;
+                                Text { text: "RUST"; color: #1976d2; font-size: 10px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                        }
+                        
+                        HorizontalBox {
+                            alignment: start;
+                            Rectangle { height: 4px; background: #3498db; width: 60px; }
+                        }
+                        
+                        ScrollView {
+                            VerticalBox {
+                                alignment: start;
+                                spacing: 20px;
+                                
+                                Text { 
+                                    text: "This is the main entry point of the application. It handles the primary event loop and UI orchestration."; 
+                                    wrap: word-wrap;
+                                    color: #2f3640;
+                                    font-size: 16px;
+                                }
+                                
+                                Rectangle {
+                                    background: #f8f9fa;
+                                    border-radius: 8px;
+                                    border-width: 1px;
+                                    border-color: #dcdde1;
+                                    VerticalBox {
+                                        padding: 15px;
+                                        spacing: 10px;
+                                        HorizontalBox {
+                                            Text { text: "fn main()"; font-size: 18px; font-weight: 700; color: #2f3640; }
+                                            Rectangle { width: 100%; }
+                                            Text { text: "source"; color: #3498db; }
+                                        }
+                                        Rectangle {
+                                            background: #edf2f7;
+                                            border-radius: 4px;
+                                            Text { 
+                                                padding: 5px;
+                                                text: "Signature: fn main() -> Result<(), Box<dyn Error>>"; 
+                                                font-family: "monospace"; 
+                                                color: #2f3640; 
+                                            }
+                                        }
+                                        Text { 
+                                            text: "Initializes the Slint application window, connects all logic callbacks to the UI properties, and starts the main event loop."; 
+                                            wrap: word-wrap;
+                                            color: #4a5568;
+                                        }
+                                    }
+                                }
+
+                                Text { 
+                                    text: "Additional module documentation and structures would be listed here dynamically based on the parsed source code."; 
+                                    wrap: word-wrap;
+                                    color: #718096;
+                                    font-italic: true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: 220px;
+                    background: #f8f9fa;
+                    Rectangle { x: 0; width: 1px; background: #dcdde1; }
+                    
+                    VerticalBox {
+                        padding: 15px;
+                        spacing: 20px;
+                        alignment: start;
+
+                        VerticalBox {
+                            spacing: 8px;
+                            Text { text: "METADATA"; font-weight: 800; color: #a4b0be; font-size: 11px; }
+                            
+                            HorizontalBox { Text { text: "Type:"; color: #7f8c8d; } Text { text: "Source File"; color: #2f3640; font-weight: 600; } }
+                            HorizontalBox { Text { text: "Language:"; color: #7f8c8d; } Text { text: "Rust"; color: #2f3640; font-weight: 600; } }
+                            HorizontalBox { Text { text: "Lines:"; color: #7f8c8d; } Text { text: "42"; color: #2f3640; font-weight: 600; } }
+                        }
+                        
+                        Rectangle { height: 1px; background: #dcdde1; }
+
+                        VerticalBox {
+                            spacing: 8px;
+                            Text { text: "ACTIVE CONTEXT"; font-weight: 800; color: #a4b0be; font-size: 11px; }
+                            
+                            HorizontalBox { Text { text: "Branch:"; color: #7f8c8d; } Text { text: "main"; color: #2f3640; font-weight: 600; } }
+                            HorizontalBox { Text { text: "Project:"; color: #7f8c8d; } Text { text: "dockix-gui"; color: #2f3640; font-weight: 600; } }
+                        }
+
+                        Rectangle { } 
+                        
+                        ActionButton { 
+                            text: "Edit Source"; 
+                            width: 100%;
+                        }
+                    }
+                }
+            }
+
+            if (root.current-view == "admin-dashboard") : VerticalBox {
+                padding: 20px;
+                spacing: 20px;
+                alignment: start;
+
+                Text { text: "Global Admin Dashboard"; font-size: 28px; font-weight: 600; color: #2f3640; }
+
+                HorizontalBox {
+                    spacing: 20px;
+                    height: 100px;
+                    Rectangle {
+                        background: white; border-radius: 8px; border-width: 1px; border-color: #dcdde1;
+                        VerticalBox { alignment: center; Text { text: "42"; font-size: 32px; font-weight: 700; color: #2f3640; } Text { text: "Total Projects"; color: #7f8c8d; } }
+                    }
+                    Rectangle {
+                        background: white; border-radius: 8px; border-width: 1px; border-color: #dcdde1;
+                        VerticalBox { alignment: center; Text { text: "1.2 GB"; font-size: 32px; font-weight: 700; color: #2f3640; } Text { text: "Disk Usage"; color: #7f8c8d; } }
+                    }
+                }
+
+                Text { text: "Recent Logs (Last 10)"; font-weight: 700; color: #2f3640; }
+                Rectangle {
+                    background: white; border-radius: 8px; border-width: 1px; border-color: #dcdde1;
+                    VerticalBox {
+                        padding: 10px;
+                        for entry in root.admin-logs : HorizontalBox {
+                            height: 30px;
+                            Text { text: entry.time; width: 150px; color: #7f8c8d; }
+                            Text { text: entry.user; width: 100px; font-weight: 600; color: #2f3640; }
+                            Text { text: entry.action; color: #2f3640; }
+                        }
+                    }
+                }
+            }
+            
+            if (root.current-view == "project-management") : VerticalBox {
+                padding: 20px;
+                spacing: 20px;
+                alignment: start;
+
+                HorizontalBox {
+                    Text { text: "Project Management: dockix"; font-size: 24px; font-weight: 600; color: #2f3640; }
+                    ActionButton { text: "Preview as Role..."; primary: true; width: 150px; }
+                }
+
+                VerticalBox {
+                    padding: 0;
+                    spacing: 10px;
+                    Text { text: "Roles & Permissions"; font-weight: 700; color: #7f8c8d; font-size: 16px; }
+                    Rectangle {
+                        background: white; border-radius: 8px; border-width: 1px; border-color: #dcdde1;
+                        VerticalBox {
+                            padding: 15px;
+                            spacing: 15px;
+                            HorizontalBox {
+                                Text { text: "Admin"; width: 100px; color: #2f3640; font-weight: 600; }
+                                Text { text: "Full access to all settings and documentation."; color: #2f3640; }
+                                ActionButton { text: "Edit"; }
+                            }
+                            HorizontalBox {
+                                Text { text: "Viewer"; width: 100px; color: #2f3640; font-weight: 600; }
+                                Text { text: "Read-only access to documentation."; color: #2f3640; }
+                                ActionButton { text: "Edit"; }
+                            }
+                        }
+                    }
+                }
+
+                VerticalBox {
+                    padding: 0;
+                    spacing: 10px;
+                    Text { text: "User Access"; font-weight: 700; color: #7f8c8d; font-size: 16px; }
+                    Rectangle {
+                        background: white; border-radius: 8px; border-width: 1px; border-color: #dcdde1;
+                        VerticalBox {
+                            padding: 15px;
+                            spacing: 10px;
+                            for user in ["admin", "tfo", "guest"] : HorizontalBox {
+                                Text { text: user; width: 100px; color: #2f3640; }
+                                Text { text: user == "admin" ? "Admin" : "Viewer"; color: #2f3640; }
+                                Rectangle { } 
+                                ActionButton { text: "Change Role"; width: 120px; }
+                            }
+                        }
+                    }
+                }
+                
+                ActionButton { 
+                    text: "Back to Dashboard"; 
+                    primary: true; 
+                    width: 200px; 
+                    clicked => { root.change-view("user-dashboard"); } 
+                }
             }
         }
     }
